@@ -1,18 +1,23 @@
 ## introduction
-In this lab, we'll explore the basics of map-making in R using the **tmap** package.
-The following materials are modified from [Chapter 9 of Geocomputation with R by Rovin Lovelace](https://geocompr.robinlovelace.net/adv-map.html)
+
+In this lab, we'll explore the basics of map-making in R using the **tmap** package. The following materials are modified from [Chapter 9 of Geocomputation with R by Rovin Lovelace](https://geocompr.robinlovelace.net/adv-map.html)
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## prerequisites
+
 Let's install all the necessary packages to reproduce code from Geocomp with R.
+
 ```{r}
 install.packages("spDataLarge", repos = "https://geocompr.r-universe.dev")
 install.packages("remotes")
 # remotes::install_github("geocompx/geocompkg")
 ```
+
 Let's load all necessary packages.
+
 ```{r load, include=TRUE, message=FALSE, warning=FALSE}
 library(sf)
 library(terra)
@@ -27,6 +32,7 @@ library(ggplot2) # tidyverse data visualization package
 ```
 
 Let's also read in some data from the **spDataLarge** package to work with later.
+
 ```{r include=TRUE}
 nz_elev = rast(system.file("raster/nz_elev.tif", package = "spDataLarge"))
 ```
@@ -46,19 +52,23 @@ nz
 the first element is always "tm_shape"
 
 ```{r include=TRUE}
-
+tm_shape(nz) + 
+  tm_fill()
 ```
 
 now let's plot just the boundaries
 
 ```{r include=TRUE}
-
+tm_shape(nz) +
+  tm_borders()
 ```
 
 and the shapes and boundaries together
 
 ```{r include=TRUE}
-
+tm_shape(nz) +
+  tm_fill() +
+  tm_borders()
 ```
 
 ## map objects
@@ -67,7 +77,9 @@ and the shapes and boundaries together
 -   this means that we store a base map and add additional layers later
 
 ```{r include = TRUE}
-
+map_nz <- tm_shape(nz) +
+  tm_polygons()
+class(map_nz)
 ```
 
 -   we can add new shapes on top of the base map
@@ -76,13 +88,17 @@ and the shapes and boundaries together
 In this case, we're adding a layer with information on elevation and this layer to have 70% transparency.
 
 ```{r include = TRUE}
-
+map_nz1 <- map_nz +
+  tm_shape(nz_elev) +
+  tm_raster(alpha = 0.7) # version 4 you could use "col_alpha"
 ```
 
 we can add points designating high points in the country
 
 ```{r include = TRUE}
-
+map_nz1 + 
+  tm_shape(nz_height) + # nz_height = preloaded data in spData with highest points in nz
+  tm_dots()
 ```
 
 ## aesthetic basics
@@ -94,7 +110,8 @@ we can add points designating high points in the country
 Let's start by changing some fixed aesthetics...First, let's change the color used to fill the NZ shapes.
 
 ```{r include=TRUE}
-
+tm_shape(nz) +
+  tm_polygons(col = "red", lwd = 3) #v4 uses fill = "red"
 ```
 
 now change the color of the boundaries
@@ -130,19 +147,23 @@ nz
 Let's try to plot the Land_area column. We might think that the following works, but it doesn't!
 
 ```{r include=TRUE}
-
+tm_shape(nz) +
+  tm_fill(col = nz$Land_area)
 ```
 
 Instead, **tmap** is expecting a character string naming the attribute associated with the geometry
 
 ```{r include = TRUE}
-
+tm_shape(nz) +
+  tm_fill(col = "Land_area")
 ```
 
 We can also add an argument that updates the title of the legend
 
 ```{r include=TRUE}
-
+tm_shape(nz) +
+  tm_fill(col = "Land_area",
+          title = "Land Area")
 ```
 
 We can even make it more precise using the "expression" function
@@ -160,17 +181,21 @@ We can even make it more precise using the "expression" function
     -   **style = "quantile"** puts the same number of observations into each bin
     -   **style = "jenks"** identifies groups of similar values and maximizes differences between bins
 
-Notice how the following maps display the same data, but look quite different    
-```{r include=TRUE}
+Notice how the following maps display the same data, but look quite different
 
+```{r include=TRUE}
+tm_shape(nz) +
+  tm_polygons(col = "Median_income", style = "pretty")
 ```
 
 ```{r include=TRUE}
-
+tm_shape(nz) +
+  tm_polygons(col = "Median_income", style = "quantile")
 ```
 
 ```{r include=TRUE}
-
+tm_shape(nz) +
+  tm_polygons(col = "Median_income", style = "jenks")
 ```
 
 ```{r include=TRUE}
@@ -178,41 +203,57 @@ Notice how the following maps display the same data, but look quite different
 ```
 
 We can also define custom bins
-```{r include=TRUE}
 
+```{r include=TRUE}
+breaks = c(0, 3, 4, 5) * 10000
+tm_shape(nz) +
+  tm_polygons(col = "Median_income", breaks = breaks)
 ```
 
 -   in some cases we might not want to use bins
+
     -   **style = "cont"** displays colors as a continuous spectrum
     -   **style = "cat"** uses a unique vale for each categorical value
-```{r include=TRUE}
 
+```{r include=TRUE}
+map_nz + 
+  tm_shape(nz_elev) +
+  tm_raster(alpha = 0.7, style = "cont")
 ```
 
 ```{r include=TRUE}
 
-```   
-  
+```
+
 ## map layout
+
 -   now that we have the basics, we can turn to all the other elements that make a cohesive map
 -   **tmap** has lots of options, but we will explore just a few
 
 To clearly give readers the context of our map, we can include a compass and scale bar
-```{r include=TRUE}
 
+```{r include=TRUE}
+map_nz +
+  tm_compass(type = "4star", position = c("left", "top"), text.size = 1) +
+  tm_scale_bar()
 ```
 
 Instead of using a compass and scale bar, we could add latitude/longitudes graticules
-```{r include=TRUE}
 
+```{r include=TRUE}
+map_nz + 
+  tm_graticules() +
+  tm_layout(bg.color = "blue")
 ```
 
 We can also update the background color
+
 ```{r include=TRUE}
 
 ```
 
 ## faceted and animated maps
+
 -   we might have data that varies over time and we want to look at the how it changes
 -   one approach is by using faceted plots, a series of plots
 
@@ -220,17 +261,19 @@ We can also update the background color
 
 ```
 
-
 ## interactive maps
+
 -   **tmap** is especially powerful because it allows us to make interactive maps using the same syntax
 -   all we need to do is enter the interactive mode
 
 ```{r include=TRUE}
-
+tmap_mode("view")
+map_nz
 ```
 
 To go back to regular plotting, we just need enter plotting mode
+
 ```{r include=TRUE}
-
+tmap_mode("plot")
+map_nz
 ```
-
