@@ -1,0 +1,226 @@
+## introduction
+In this lab, we'll explore the basics of manipulating vector data in R using the **sf** package.
+The following materials are modified from [Chapter 3 of Geocomputation with R by Rovin Lovelace](https://geocompr.robinlovelace.net/attr.html)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## prerequisites
+
+```{r install, include=TRUE}
+rm(list = ls())
+library(sf)
+library(spData)
+library(tmap)
+library(tidyverse)
+```
+
+## handling sf objects
+
+Let's start by looking at how we can construct a **sf** object  
+-   first we create a geometry for London by supplying a point and CRS  
+-   then we supply some non-geographic attributes
+
+```{r include=TRUE}
+# all funcitons in sf start with "st"
+lnd_point <- st_point(c(0.1, 51.5))
+lnd_geom <- st_sfc(lnd_point, crs = 4326) 
+
+# add attribute data
+lnd_attributes <- data.frame(
+  name = "London",
+  temperature = 25
+)
+
+lnd_sf <- st_sf(lnd_attributes, geometry = lnd_geom)
+
+lnd_sf
+class(lnd_sf)
+```
+We can also check out what the CRS looks like.
+```{r include=TRUE}
+st_crs(lnd_sf)
+
+# check if geographic 
+st_crs(lnd_sf)$IsGeographic
+
+# ask for different version of the CRS (in proj format)
+st_crs(lnd_sf)$proj4string
+```
+
+
+Now let's look at an existing **sf** object representing countries of the world
+
+```{r include=TRUE}
+class(world)
+dim(world)
+```
+
+We can see that this object contains both spatial data ("geom" column) and attributes about those geometries. We can perform operations on the attribute data, just like we would with a normal data frame.
+
+```{r include=TRUE}
+summary(world$lifeExp)
+```
+
+The geometry column is "sticky", meaning it will stick around unless we explicitly get rid of it. To convert this object into a data frame, we need to drop the geometry column.
+
+```{r include=TRUE}
+world %>% 
+  select(-geom) # doesn't get rid of geoms like this
+
+# turn into data frame W/O geometries, have to use this specific function
+world_df <- st_drop_geometry(world)
+```
+
+## vector attribute subsetting
+The especially great things about **sf** objects is that we can use **tidyverse** functions on them!
+
+We can select columns...
+```{r include=TRUE}
+world %>% 
+  select(name_long, pop)
+```
+
+Or remove columns...
+```{r include=TRUE}
+world %>% 
+  select(-subregion)
+```
+
+Or select AND rename columns
+```{r include=TRUE}
+world %>% 
+  select(name = name_long, poppulation = pop)
+```
+
+Or filter observations based on variables
+```{r include=TRUE}
+world %>% 
+  filter(lifeExp >= 80)
+```
+
+## chaining commands with pipes
+Because we can use **dplyr** functions with **sf** objects, we can chain together commands using the pipe operator.
+
+Let's try to find the country in Asia with the highest life expectancy
+```{r include=TRUE}
+world %>% 
+  filter(continent == "Asia") %>% 
+  select(name_long, continent, lifeExp) %>% 
+  slice_max(lifeExp)
+```
+
+## vector attribute aggregation
+Aggregation is the process of summarizing data with one or more 'grouping' variables. For example, using the 'world' which provides information on countries of the world, we might want to aggregate to the level of continents. It is important to note that aggregating data *attributes* is a different process from aggregating *geographic* data, which we will cover later.
+
+Let's try to find the total population within each continent.
+```{r include=TRUE}
+world %>% 
+  group_by(continent) %>% 
+  summarize(population = sum(pop, na.rm = TRUE))
+```
+
+Let's also find the total area and number of countries in each continent
+```{r include=TRUE}
+world %>% 
+  group_by(continent) %>% 
+  summarize(population = sum(pop, na.rm = TRUE),
+            area_km2 = sum(area_km2, na.rm = TRUE),
+            n_countries = n())
+```
+
+Building on this, let's find the population density of each continent, find the continent's with highest density and arrange by the number of countries. We'll drop the geometry column to speed things up.
+```{r include=TRUE}
+world %>%
+  # drop geometries
+  st_drop_geometry() %>% 
+  # group by continents
+  group_by(continent) %>% 
+  # calculating population, area, and number of countries in each continent
+  summarize(population = sum(pop, na.rm = TRUE),
+            area_km2 = sum(area_km2, na.rm = TRUE),
+            n_countries = n()) %>% 
+  # create new column of population density
+  mutate(density = round(population / area_km2)) %>% 
+  # show top three continents based on pop density
+  slice_max(density, n = 3) %>% 
+  # arrange continents by number of countries (desc so largest on top)
+  arrange(desc(n_countries))
+```
+
+
+## vector attribute joining
+A critical part of many data science workflows is combining data sets based on common attributes. In R, we do this using multiple join functions, which follow SQL conventions.  
+
+Let's start by looking a data set on national coffee production
+```{r include=TRUE}
+head(coffee_data)
+class(coffee_data)
+```
+
+We can combine this with the world data set, but joining based on country's names
+```{r include=TRUE}
+# what if columns you're joining by have different names?
+test <- world %>% 
+  select(name = name_long)
+test_coffee <- left_join(test, coffee_data, by = c("name" = "name_long"))
+
+# joining by columns with same name
+world_coffee <- left_join(world, coffee_data, by = "name_long")
+```
+
+And plot what this looks like...
+```{r include=TRUE}
+tm_shape(world_coffee) +
+  tm_polygons(col = "coffee_production_2016")
+```
+
+If we just wanted to keep countries that do have coffee data, we could use an inner join
+```{r include=TRUE}
+world_coffee_inner <- inner_join(world, coffee_data, by = "name_long")
+```
+
+It looks like we lost some countries with coffee data, so let's figure out what's going on. We can find rows that didn't match using the **setdiff** function.
+```{r include=TRUE}
+setdiff(coffee_data$name_long, world$name_long)
+# shows names in coffee data that don't have any matches in world data
+
+# a way to add checks into your workflow:
+if(nrow(world_coffee_inner) != nrow(coffee_data)){
+  print("error in joining data!")
+}
+```
+
+We see that one of the issues is that the two data sets use different naming conventions for the Democratic Republic of the Congo. We can use a string matching function to figure out what the DRC is called in the world data set.
+```{r include=TRUE}
+stringr::str_subset(world$name_long, "Dem*.+Congo")
+```
+
+Now we can update the coffee data set with the matching name for the DRC.
+```{r include=TRUE}
+drc <- stringr::str_subset(world$name_long, "Dem*.+Congo")
+
+coffee_data$name_long[grepl("Congo, ", coffee_data$name_long)] = drc
+```
+
+And we can try the inner join again and hopefully the DRC now matches.
+```{r include=TRUE}
+world_coffee_inner <- inner_join(world, coffee_data, by = "name_long")
+```
+
+Let's visualize what a the inner join did to our spatial object
+```{r include=TRUE}
+tm_shape(world_coffee_inner) +
+  tm_polygons(col = "coffee_production_2017")
+```
+
+And let's test what would happen if we flipped the order of the data sets in the join
+```{r include=TRUE}
+coffee_world_inner <- inner_join(coffee_data, world, by = "name_long")
+head(coffee_world_inner)
+
+tm_shape(coffee_world_inner) +
+  tm_polygons(col = "coffee_production_2017")
+class(coffee_world_inner) # lose the geometries when doing the inner joining this way
+```
+
