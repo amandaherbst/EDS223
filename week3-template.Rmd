@@ -26,32 +26,64 @@ Let's start by going back to the New Zealand datasets and find all the high poin
 The command
 
 ```{r include=TRUE}
+# filter to canterbury
+canterbury <- nz %>% 
+  filter(Name == "Canterbury")
 
+# find the highest points in canterbury 
+# like filtering but based on geometries!
+c_height <- nz_height[canterbury,]
 
+# plot!
+tm_shape(nz) +
+  tm_polygons() +
+  tm_shape(canterbury) +
+  tm_polygons(col = "blue") +
+  tm_shape(c_height) +
+  tm_dots(col = "red")
 ```
 
 The default is to subset to features that intersect, but we can use other operations, including finding features that do not intersect.
 
 ```{r include=TRUE}
+# find all of the data NOT in canterbury
+outside_height <- nz_height[canterbury, ,op = st_disjoint]
 
+tm_shape(nz) +
+  tm_polygons() +
+  tm_shape(canterbury) +
+  tm_polygons(col = "blue") +
+  tm_shape(outside_height) +
+  tm_dots(col = "red")
 ```
 
 We can perform the same operations using topological operators. These operators return matrices testing the relationship between features. 
 
 ```{r include=TRUE}
+sel_sgbp <- st_intersects(x = nz_height, y = canterbury)
+sel_logical <- lengths(sel_sgbp) > 0
+# assignment 2: sometimes just knowing the number of things that intersect is helpful
 
+c_height2 <- nz_height[sel_logical,]
 ```
 
 We can also use the **st_filter** function in *sf*
 
 ```{r include=TRUE}
+# filter and tell it if you want to find intersections, disjoints, etc.
+nz_height %>% 
+  st_filter(y = canterbury, .predicate = st_intersects)
 
+# st_intersection is similar to a join
+# adds attributes from canterbury to the points in nz_height
+c_height3 <- st_intersection(x = nz_height, y = canterbury)
 
 ```
 
 We can change the predicate option to test subset to features that don't intersect
 
 ```{r include=TRUE}
+st_intersection
 
 ```
 ## buffers
