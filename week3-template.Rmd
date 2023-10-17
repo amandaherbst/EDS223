@@ -92,13 +92,38 @@ Buffers create polygons representing a set distance from a feature.
 
 ```{r include=TRUE}
 
+seine_buffer <- st_buffer(seine, dist = 5000)
+
+tm_shape(seine_buffer) +
+  tm_polygons() +
+  tm_shape(seine) +
+  tm_lines()
 ```
 
 ## unions
 As we saw in the last lab, we can spatially aggregate without explicitly asking R to do so.
 
 ```{r include=TRUE}
+test <- world %>% 
+  group_by(continent) %>% 
+  summarize(population = sum(pop, na.rm = TRUE))
 
+us_west <- us_states %>% 
+  filter(REGION == "West")
+
+# union combines geometries of all western states
+us_west_union <- st_union(us_west)
+
+tm_shape(us_west_union) +
+  tm_polygons()
+
+texas <- us_states %>% 
+  filter(NAME == "Texas")
+
+texas_union <- st_union(us_west_union, texas)
+
+tm_shape(texas_union) +
+  tm_polygons()
 ```
 
 What is going on here? Behind the scenes, **summarize()** is using **st_union()** to dissolve the boundaries.
@@ -120,19 +145,35 @@ Where attribute joining depends on both data sets sharing a 'key' variable, spat
 Let's test this out by creating 50 points randomly distributed across the world and finding out what countries they call in.
 
 ```{r include=TRUE}
+set.seed(2018)
+bb <- st_bbox(world)
 
+random_df <- data.frame(
+  x = runif(n = 10, min = bb[1], max = bb[3]),
+  y = runif(n = 10, min = bb[2], max = bb[4])
+)
+
+random_points <- random_df %>% 
+  # turn dataframe into spatial object and tell what columns to use as coordinates
+  st_as_sf(coords = c("x", "y")) %>% 
+  st_set_crs("EPSG:4326")
+
+tm_shape(world) +
+  tm_fill() +
+  tm_shape(random_points) +
+  tm_dots(col = "red")
 ```
 
 Let's first use spatial subsetting to find just the countries that contain random points.
 
 ```{r include=TRUE}
-
+world_random <- world[random_points, ]
 ```
 
 Now let's perform a spatial join to add the info from each country that a point falls into onto the point dataset.
 
 ```{r include=TRUE}
-
+random_joined <- st_join(random_points, world)
 ```
 
 By default, **st_join** performs a left join. We change this and instead perform an inner join.
@@ -174,7 +215,10 @@ Similar to attribute data aggregation, spatial data aggregation condenses data (
 
 Let's say we wanted to find the average height of high point in each region of New Zealand. We could use the **aggregate** function in base R.
 ```{r include=TRUE}
+nz_agg <- aggregate(x = nz_height, by = nz, FUN = mean)
 
+tm_shape(nz_agg) +
+  tm_polygons(col = "elevation")
 ```
 The result of this is an object with the same geometries as the aggregating feature data set (in this case 'nz').
 
@@ -184,31 +228,56 @@ The result of this is an object with the same geometries as the aggregating feat
 
 We could also use a **sf**/**dplyr** approach.
 ```{r include=TRUE}
+st_join(nz, nz_height) %>% 
+  group_by(Name) %>% 
+  summarize(elevation = mean(elevation, na.rm = TRUE))
 
+# keeps the region names unlike above
 ```
 
 ## joining incongruent layers
 We might want to aggregate data to geometries that are not congruent (i.e. their boundaries don't line up). This causes issues when we think about how to summarize associated values.
 ```{r include=TRUE}
+head(incongruent)
+head(aggregating_zones)
 
+tm_shape(incongruent) +
+  tm_polygons() +
+  tm_shape(aggregating_zones) +
+  tm_borders(col = "red")
 ```
 
 The simplest method for dealing with this is using area weighted spatial interpolation which transfers values from the 'incongruent' object to a new column in 'aggregating_zones' in proportion with the area of overlap. 
 
 ```{r include=TRUE}
+iv <- incongruent["value"]
 
+agg_aw <- st_interpolate_aw(iv, aggregating_zones, extensive = TRUE)
+
+tm_shape(agg_aw) +
+  tm_fill(col = "value")
 ```
 ## centroids
 Centroids identify the center of a spatial feature. Similar to taking an average, there are many ways to compute a centroid. The most common is the *geographic* centroid.
 ```{r include=TRUE}
+nz_centroid <- st_centroid(nz)
 
+tm_shape(nz) +
+  tm_fill() +
+  tm_shape(nz_centroid) +
+  tm_dots()
 ```
 
 Sometimes centroids fall outside of the boundaries of the objects they were created from. In the case where we need them to fall inside of the feature, we can use *point on surface* methods.
 
 
 ```{r include=TRUE}
+nz_pos <- st_point_on_surface(nz)
 
+tm_shape(nz) +
+  tm_fill() +
+  tm_shape(nz_pos) +
+  tm_dots()
 ```
 
 ## distance relationships
@@ -228,13 +297,23 @@ Simplification generalizes vector data (polygons and lines) to assist with plott
 Let's try simplifying the US states using the Douglas-Peucker algorithm. GEOS assumes a projected CRS, so we first need to project the data, in this case into the US National Atlas Equal Area (epsg = 2163)
 
 ```{r include=TRUE}
+us_states2163 <- st_transform(us_states, "EPSG:2163")
 
+us_states_simple <- st_simplify(us_states2163, dTolerance = 100000)
+
+tm_shape(us_states_simple) +
+  tm_polygons()
 ```
 
 To preserve the states' topology let's use a simplify function from **rmapshaper** which uses Visalingam's algorithm.
 
 ```{r include=TRUE}
+us_states_simple2 <- rmapshaper::ms_simplify(us_states2163,
+                                             keep = 0.01,
+                                             keep_shapes = TRUE)
 
+tm_shape(us_states_simple2) +
+  tm_polygons()
 ```
 
 Instead of simplifying, we could try smoothing using Gaussian kernel regression.
