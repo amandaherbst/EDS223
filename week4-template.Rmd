@@ -29,42 +29,76 @@ Raster data represents continuous surfaces, as opposed to the discrete features 
 Let's create a **SpatRaster** object using a digitial elevation model for Zion National Park.
 
 ```{r include=TRUE}
+raster_filepath <- system.file("raster/srtm.tif", package = "spDataLarge")
 
+my_rast <- rast(raster_filepath)
+class(my_rast)
+
+plot(my_rast)
 ```
 
 We can also create rasters from scratch using the **rast()** function. Here we create 36 cells centerd around (0,0). By default the CRS is set to WGS84, but we could change this with the "crs" argument.
 Because we are working in WGS84, the resolution is in units of degrees. **rast()** fills the values of the cells row-wise starting in the upper left corner.
 
 ```{r include=TRUE}
+# resolution is essential extent / number of boxes
+new_raster <- rast(nrow = 6, ncol = 6, resolution = 0.5,
+                   xmin = -1.5, xmax = 1.5,
+                   ymin = -1.5, ymax = 1.5,
+                   vals = 1:36)
+new_raster
 
+# fills in the boxes with given values left to right, top to bottom
+plot(new_raster)
 ```
 
 The SpatRaster class can also handle multiple layers.
 
 ```{r include=TRUE}
-
+multi_raster_file <- system.file("raster/landsat.tif", package = "spDataLarge")
+multi_rast <- rast(multi_raster_file)
+multi_rast
 ```
 
 We can subset layers using either the layer number or name
 ```{r include=TRUE}
-
+# using layer number
+multi_rast3 <- subset(multi_rast, 3)
+# using layer name
+multi_rast4 <- subset(multi_rast, "landsat_4")
+# selecting multiple layers at once:
+# subset(multi_rast, c(3,4))
 ```
 
 We can combine SpatRaster objects into one, using the c function
 ```{r include=TRUE}
-
+# need to have same extent, crs, resolution, position to stack these together
+multi_rast34 <- c(multi_rast3, multi_rast4)
 ```
 
 Let's create an example raster for elevation
 
 ```{r include=TRUE}
-
+elev <- rast(nrow = 6, ncol = 6, resolution = 0.5,
+                   xmin = -1.5, xmax = 1.5,
+                   ymin = -1.5, ymax = 1.5,
+                   vals = 1:36)
 ```
 
 Rasters can also hold categorical data. Let's create an example raster for soil types.
 
 ```{r include=TRUE}
+grain_order <- c("clay", "silt", "sand")
+grain_char <- sample(grain_order, 36, replace = TRUE)
+grain_fact <- factor(grain_char, levels = grain_order)
 
+grain <- rast(nrow = 6, ncol = 6, resolution = 0.5,
+                   xmin = -1.5, xmax = 1.5,
+                   ymin = -1.5, ymax = 1.5,
+                   vals = grain_fact)
+
+plot(elev)
+plot(grain)
 ```
 
 ## raster subsetting
