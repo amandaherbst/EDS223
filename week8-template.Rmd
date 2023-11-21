@@ -57,32 +57,42 @@ library(tmap)
 library(cowplot)
 
 rm(list = ls())
-here::i_am("labs/week8.Rmd")
+# here::i_am("labs/week8.Rmd")
 ```
 
 ### create NDVI function
 Let's start by defining a function to compute the Normalized Difference Vegetation Index (NDVI). NDVI computes the difference in reflectance in the near infrared and red bands, normalized by their sum. 
 
 ```{r ndvi-function}
-
+# define ndvi function
+ndvi_fun <- function(nir, red){
+  (nir - red)/(nir + red)
 }
+
 ```
 
 ### computing NDVI for a single scene
 We have 8 scenes collected by the Landsat OLI sensor on 8 different days throughout the year.
 Let's start by loading in the first scene collected on June 12, 2018
 ```{r}
-
+landsat_20180612 <- rast(here("data", "landsat_20180612.tif"))
+landsat_20180612
 ```
 
 Now let's update the names of the layers to match the spectral bands they correspond to
 ```{r}
+# would look at documentation to see what each layer is
+names(landsat_20180612) <- c("blue", "green", "red", "NIR", "SWIR1", "SWIR2")
 
+landsat_20180612
 ```
 
 Now we can apply the NDVI function we created to compute NDVI for this scene using the `lapp()` function. The `lapp()` function applies a function to each cell using layers as arguments. Therefore, we need to tell `lapp()` which layers (or bands) to pass into the function. The NIR band is the 4th layer and the red band is the 3rd layer in our raster. In this case, because we defined the NIR band as the first argument and the red band as the second argument in our function, we tell `lapp()` to use the 4th layer first and 3rd layer second. 
 ```{r}
+ndvi_20180612 <- lapp(landsat_20180612[[c(4,3)]], fun = ndvi_fun)
 
+ndvi_20180612
+plot(ndvi_20180612)
 ```
 
 
@@ -94,7 +104,6 @@ The first attempt was pretty clunky and required a lot of copy/pasting. Because 
 Let's start over and see how we could do this more efficiently. We'll clear our environment and redefine our function for NDVI.
 ```{r}
 rm(list = ls())
-here::i_am("labs/week8.Rmd")
 
 ndvi_fun = function(nir, red){
   (nir - red) / (nir + red)
@@ -106,10 +115,16 @@ Let's first sketch out what operations we want to perform so we can figure out w
 ```{r eval=FALSE}
 
 # note: this code is not meant to run! we're just outlining the function we want to create
+create_ndvi_layer <- function(file) {
+  landsat <- rast(file)
+  names(landsat) <- c("blue", "green", "red", "NIR", "SWIR1", "SWIR2")
+  ndvi <- lapp(landsat[[c("NIR","red")]], fun = ndvi_fun)
+  return(ndvi)
+}
 
 
 # what do we notice as what we need to pass into our function?
-
+### only need the file names!
 ```
 
 #### creating a list of files/scenes
@@ -119,7 +134,7 @@ We want a list of the scenes so that we can tell our function to compute NDVI fo
 # here we're asking for the names of all the files in the week8 folder
 # the "pattern" option returns names that end in .tif (the file extension for the landsat scences)
 # the "full.names" option returns the full file path for each scene
-
+files <- list.files(here("data"), pattern = "*.tif", full.names = TRUE)
 
 ```
 
@@ -129,18 +144,44 @@ Now let's update our function to work with list of file names we created
 
 # now we're passing our function a number that will correspond to the index in the list of file names
 
+create_ndvi_layer <- function(i) {
+  
+  landsat <- rast(files[i])
+  names(landsat) <- c("blue", "green", "red", "NIR", "SWIR1", "SWIR2")
+  ndvi <- lapp(landsat[[c("NIR","red")]], fun = ndvi_fun)
+ 
+  return(ndvi)
+}
 
 # let's test our function by asking it to read in the first file 
+test <- create_ndvi_layer(1)
 
+test
 ```
 
 #### run function on all scenes!
 Now we can use our function to create a NDVI layer for each scene and stack them into a single rasterstack.
 ```{r}
 # create NDVI layer for each scene (day) and stack into a single rasterstack
-
+all_ndvi <- c(create_ndvi_layer(1),
+              create_ndvi_layer(2),
+              create_ndvi_layer(3),
+              create_ndvi_layer(4),
+              create_ndvi_layer(5),
+              create_ndvi_layer(6),
+              create_ndvi_layer(7),
+              create_ndvi_layer(8))
 
 # update layer names to match date
+names(all_ndvi) <- c("2018-06-12", 
+                     "2018-08-15", 
+                     "2018-10-18", 
+                     "2018-11-03", 
+                     "2019-01-22", 
+                     "2019-02-23", 
+                     "2019-04-12", 
+                     "2019-07-01")
+all_ndvi
 
 ```
 
@@ -152,16 +193,22 @@ Now that we have computed NDVI for each of our scenes (days) we want to compare 
 #### read in study sites
 First, we'll read in a shapefile of study sites.
 ```{r include=TRUE}
+sites <- st_read(here("data","study_sites.shp"))
 
-
+sites
 # plot study sites on a single NDVI layer
-
+tm_shape(all_ndvi[[1]]) +
+  tm_raster() + 
+  tm_shape(sites) +
+  tm_polygons()
 ```
 
 #### extract NDVI at study sites
 Here we find the average NDVI within each study site. The output of extract is a data frame with rows that match the study site dataset, so we bind the results to the original dataset. 
 ```{r include=TRUE}
+sites_ndvi <- terra::extract(all_ndvi, sites, fun = "mean")
 
+sites_annotated <- cbind(sites, sites_ndvi)
 ```
 
 #### clean results
@@ -171,11 +218,31 @@ We're done! Except our data is very untidy... Let's tidy it up!\
 -   turn from wide to long format
 -   turn layer names into date format
 ```{r include=TRUE}
-
+sites_clean <- sites_annotated %>% 
+  st_drop_geometry() %>% # drop geometries
+  select(-ID) %>% # don't need ID column
+  pivot_longer(!study_site) %>% # pivot longer, everything but study site
+  rename(NDVI = value) %>% # rename "value" column to "NDVI"
+  # use string subsetting to turn our dates into datetime objects
+  mutate("year" = str_sub(name, 2,5),
+         "month" = str_sub(name,7,8),
+         "day" = str_sub(name, -2, -1)) %>% 
+  unite("date", 4:6, sep = "-") %>% # combine columns 4 - 6 (year, month, day)
+  mutate("date" = lubridate::as_date(date)) %>% # conver to date object
+  select(-name) # remove original "name" column 
 ```
 
 #### plot results
 ```{r include=TRUE}
-
+ggplot(data = sites_clean,
+       aes(x = date, y = NDVI,
+           group = study_site,
+           col = study_site)) +
+  geom_line() +
+  theme_minimal() +
+  labs(x = "",
+       y = "Normalized Difference Vegetation Index (NDVI)",
+       col = "Vegetation Type",
+       title = "Seasonal cycles of vegetation productivity")
 ```
 
